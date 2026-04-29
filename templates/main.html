@@ -159,6 +159,22 @@
             <a class="inline-link" href="/profile/{{ tweet.get('username', 'unknown') }}">@{{ tweet.get("username", "unknown") }}</a>
           </p>
           <p>{{ tweet.get("text") }}</p>
+          {% if current_user and tweet.get("user_id") == current_user.get("_id") %}
+          <details class="tweet-edit">
+            <summary>Edit tweet</summary>
+            <form method="post" action="/tweet/{{ tweet.get('_id') }}/edit">
+              <textarea
+                name="tweet_text"
+                maxlength="280"
+                rows="3"
+                required
+              >{{ tweet.get("text") }}</textarea>
+              <div class="actions">
+                <button type="submit">Save changes</button>
+              </div>
+            </form>
+          </details>
+          {% endif %}
         </li>
         {% endfor %}
       </ul>

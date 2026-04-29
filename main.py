@@ -8,6 +8,7 @@ from azure.storage.blob import BlobServiceClient
 from azure.storage.blob import ContentSettings
 from azure.core.exceptions import AzureError
 from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import FastAPI
 from fastapi import File
 from fastapi import Form
@@ -133,6 +134,7 @@ def get_or_create_current_user(user_token: dict) -> Optional[dict]:
             "email": user_token.get("email"),
             "username": None,
             "profile_image_url": None,
+            "bio": "",
             "follower_user_ids": [],
             "following_user_ids": [],
             "created_at": datetime.now(timezone.utc),
@@ -321,6 +323,7 @@ def render_profile(
     profile_tweets = []
     can_follow = False
     is_following = False
+    can_edit_profile = False
     token_error = None
 
     if users_collection is None or tweets_collection is None:
@@ -332,6 +335,8 @@ def render_profile(
         profile_user = users_collection.find_one({"username": profile_username})
         if profile_user:
             profile_tweets = get_latest_tweets_for_user(profile_user["_id"], 10)
+            if current_user and current_user["_id"] == profile_user["_id"]:
+                can_edit_profile = True
             if current_user and current_user["_id"] != profile_user["_id"] and current_user.get("username"):
                 can_follow = True
                 following_ids = current_user.get("following_user_ids", [])
@@ -353,6 +358,7 @@ def render_profile(
             "profile_tweets": profile_tweets,
             "can_follow": can_follow,
             "is_following": is_following,
+            "can_edit_profile": can_edit_profile,
         },
     )
 
@@ -466,6 +472,48 @@ async def add_tweet(request: Request, tweet_text: str = Form(...)):
         }
     )
     return render_home(request, success_message="Tweet posted.")
+
+
+@app.post("/tweet/{tweet_id}/edit", response_class=HTMLResponse)
+async def edit_tweet(request: Request, tweet_id: str, tweet_text: str = Form(...)):
+    user_token, token_error = get_user_token_from_cookie(request)
+    if token_error:
+        return render_home(request, error_message=token_error)
+
+    if users_collection is None or tweets_collection is None:
+        return render_home(request, error_message="MongoDB connection failed.")
+
+    current_user = get_or_create_current_user(user_token)
+    if not current_user:
+        return render_home(request, error_message="Unable to find current user.")
+
+    try:
+        tweet_object_id = ObjectId(tweet_id)
+    except InvalidId:
+        return render_home(request, error_message="Invalid tweet id.")
+
+    existing_tweet = tweets_collection.find_one({"_id": tweet_object_id})
+    if not existing_tweet:
+        return render_home(request, error_message="Tweet not found.")
+    if existing_tweet.get("user_id") != current_user["_id"]:
+        return render_home(request, error_message="You can only edit your own tweets.")
+
+    clean_tweet = tweet_text.strip()
+    if not clean_tweet:
+        return render_home(request, error_message="Tweet cannot be empty.")
+    if len(clean_tweet) > 280:
+        return render_home(request, error_message="Tweet must be 280 characters or fewer.")
+
+    tweets_collection.update_one(
+        {"_id": tweet_object_id},
+        {
+            "$set": {
+                "text": clean_tweet,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    return render_home(request, success_message="Tweet updated.")
 
 
 @app.post("/profile/{username}/toggle-follow", response_class=HTMLResponse)
@@ -594,3 +642,34 @@ async def upload_profile_picture(request: Request, username: str, profile_image:
         },
     )
     return render_profile(request, username, success_message="Profile picture updated.")
+
+
+@app.post("/profile/{username}/bio", response_class=HTMLResponse)
+async def update_bio(request: Request, username: str, bio: str = Form(...)):
+    user_token, token_error = get_user_token_from_cookie(request)
+    if token_error:
+        return render_profile(request, username, error_message=token_error)
+
+    if users_collection is None:
+        return render_profile(request, username, error_message="MongoDB connection failed.")
+
+    current_user = get_or_create_current_user(user_token)
+    if not current_user:
+        return render_profile(request, username, error_message="Unable to find current user.")
+    if current_user.get("username") != username:
+        return render_profile(request, username, error_message="You can only edit your own bio.")
+
+    clean_bio = bio.strip()
+    if len(clean_bio) > 280:
+        return render_profile(request, username, error_message="Bio must be 280 characters or fewer.")
+
+    users_collection.update_one(
+        {"_id": current_user["_id"]},
+        {
+            "$set": {
+                "bio": clean_bio,
+                "bio_updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    return render_profile(request, username, success_message="Bio updated.")

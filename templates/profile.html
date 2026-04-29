@@ -33,6 +33,7 @@
           <h1>@{{ profile_user.get("username") }}</h1>
           <p class="muted">{{ profile_user.get("email", "No email available") }}</p>
           <p class="muted">Followers: {{ profile_user.get("follower_user_ids", [])|length }}</p>
+          <p class="muted">Bio: {{ profile_user.get("bio", "") or "No bio yet." }}</p>
         </div>
       </div>
 
@@ -50,6 +51,14 @@
           <button type="submit">Upload picture</button>
         </div>
       </form>
+
+      <form method="post" action="/profile/{{ profile_user.get('username') }}/bio">
+        <label for="bio">Your bio (max 280 chars)</label>
+        <textarea id="bio" name="bio" maxlength="280" rows="3" placeholder="Tell people about yourself...">{{ profile_user.get("bio", "") }}</textarea>
+        <div class="actions">
+          <button type="submit">Save bio</button>
+        </div>
+      </form>
       {% endif %}
     </section>
 
@@ -60,6 +69,22 @@
         {% for tweet in profile_tweets %}
         <li class="tweet-item">
           <p>{{ tweet.get("text") }}</p>
+          {% if can_edit_profile %}
+          <details class="tweet-edit">
+            <summary>Edit tweet</summary>
+            <form method="post" action="/tweet/{{ tweet.get('_id') }}/edit">
+              <textarea
+                name="tweet_text"
+                maxlength="280"
+                rows="3"
+                required
+              >{{ tweet.get("text") }}</textarea>
+              <div class="actions">
+                <button type="submit">Save changes</button>
+              </div>
+            </form>
+          </details>
+          {% endif %}
         </li>
         {% endfor %}
       </ul>
