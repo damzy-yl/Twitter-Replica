@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User Profile</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="container">
+    <a class="btn-link back-link" href="/">Back to home</a>
+
+    {% if error_message %}
+    <p class="status error">{{ error_message }}</p>
+    {% endif %}
+    {% if success_message %}
+    <p class="status success">{{ success_message }}</p>
+    {% endif %}
+
+    {% if profile_user %}
+    <section class="card">
+      <div class="profile-header">
+        {% if profile_user.get("profile_image_url") %}
+        <img
+          class="avatar"
+          src="{{ profile_user.get('profile_image_url') }}?v={{ profile_user.get('profile_image_updated_at', '') }}"
+          alt="Profile picture for {{ profile_user.get('username') }}"
+        />
+        {% else %}
+        <div class="avatar avatar-fallback">No photo</div>
+        {% endif %}
+        <div>
+          <h1>@{{ profile_user.get("username") }}</h1>
+          <p class="muted">{{ profile_user.get("email", "No email available") }}</p>
+          <p class="muted">Followers: {{ profile_user.get("follower_user_ids", [])|length }}</p>
+        </div>
+      </div>
+
+      {% if can_follow %}
+      <form method="post" action="/profile/{{ profile_user.get('username') }}/toggle-follow">
+        <button type="submit">{{ "Unfollow" if is_following else "Follow" }}</button>
+      </form>
+      {% endif %}
+
+      {% if current_user and current_user.get("username") == profile_user.get("username") %}
+      <form method="post" action="/profile/{{ profile_user.get('username') }}/upload-picture" enctype="multipart/form-data">
+        <label for="profile_image">Change profile picture (JPG/PNG)</label>
+        <input id="profile_image" name="profile_image" type="file" accept=".jpg,.jpeg,.png,image/png,image/jpeg" required />
+        <div class="actions">
+          <button type="submit">Upload picture</button>
+        </div>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Last 10 tweets</h2>
+      {% if profile_tweets %}
+      <ul class="tweet-list">
+        {% for tweet in profile_tweets %}
+        <li class="tweet-item">
+          <p>{{ tweet.get("text") }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No tweets found.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+
+  <script type="module" src="/static/firebase-login.js"></script>
+</body>
+</html>

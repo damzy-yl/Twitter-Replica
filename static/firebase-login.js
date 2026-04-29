@@ -21,10 +21,15 @@ window.addEventListener("load", function () {
   initializeApp(firebaseConfig);
   const auth = getAuth();
   updateUI(document.cookie);
-  console.log("hello world load");
+  const signupButton = document.getElementById("sign-up");
+  const loginButton = document.getElementById("login");
+  const signoutButton = document.getElementById("sign-out");
+  const emailInput = document.getElementById("email");
+  const passwordInput = document.getElementById("password");
 
   // signup of a new user to firebase
-  document.getElementById("sign-up").addEventListener("click", function () {
+  if (signupButton && emailInput && passwordInput) {
+    signupButton.addEventListener("click", function () {
     const email = document.getElementById("email").value;
     const password = document.getElementById("password").value;
 
@@ -43,10 +48,12 @@ window.addEventListener("load", function () {
         // issue for signup that we will drop to console
         console.log(error.code + error.message);
       });
-  });
+    });
+  }
 
   // login of a user to firebase
-  document.getElementById("login").addEventListener("click", function () {
+  if (loginButton && emailInput && passwordInput) {
+    loginButton.addEventListener("click", function () {
     const email = document.getElementById("email").value;
     const password = document.getElementById("password").value;
 
@@ -66,16 +73,19 @@ window.addEventListener("load", function () {
         // issue with signin that we will drop to console
         console.log(error.code + error.message);
       });
-  });
+    });
+  }
 
   // signout from firebase
-  document.getElementById("sign-out").addEventListener("click", function () {
+  if (signoutButton) {
+    signoutButton.addEventListener("click", function () {
     signOut(auth).then(() => {
       // remove the ID token for the user and force a redirect to /
       document.cookie = "token=;path=/;SameSite=Strict";
       window.location = "/";
     });
-  });
+    });
+  }
 });
 
 // function that will update the UI for the user depending on if they are logged in or not by checking the passed in cookie
@@ -84,12 +94,18 @@ function updateUI(cookie) {
   const token = parseCookieToken(cookie);
 
   // if a user is logged in then disable the email, password, signup, and login UI elements and show the signout button and vice versa
+  const loginBox = document.getElementById("login-box");
+  const signOutButton = document.getElementById("sign-out");
+  if (!loginBox || !signOutButton) {
+    return;
+  }
+
   if (token.length > 0) {
-    document.getElementById("login-box").hidden = true;
-    document.getElementById("sign-out").hidden = false;
+    loginBox.hidden = true;
+    signOutButton.hidden = false;
   } else {
-    document.getElementById("login-box").hidden = false;
-    document.getElementById("sign-out").hidden = true;
+    loginBox.hidden = false;
+    signOutButton.hidden = true;
   }
 }
 

@@ -19,6 +19,9 @@
 
     {% if user_token %}
     <p class="status success">Signed in as: {{ user_token.get("email", "Unknown user") }}</p>
+    {% if current_user and current_user.get("username") %}
+    <p class="muted">Your profile: <a class="inline-link" href="/profile/{{ current_user.get('username') }}">@{{ current_user.get("username") }}</a></p>
+    {% endif %}
     {% endif %}
 
     <section id="login-box" class="card">
@@ -78,7 +81,7 @@
       <ul class="tweet-list">
         {% for user in matched_users %}
         <li class="tweet-item">
-          <p>@{{ user.get("username") }}</p>
+          <p><a class="inline-link" href="/profile/{{ user.get('username') }}">@{{ user.get("username") }}</a></p>
         </li>
         {% endfor %}
       </ul>
@@ -93,7 +96,7 @@
       <ul class="tweet-list">
         {% for matched_tweet in matched_tweets %}
         <li class="tweet-item">
-          <p class="muted">@{{ matched_tweet.get("username", "unknown") }}</p>
+          <p class="muted"><a class="inline-link" href="/profile/{{ matched_tweet.get('username', 'unknown') }}">@{{ matched_tweet.get("username", "unknown") }}</a></p>
           <p>{{ matched_tweet.get("text") }}</p>
         </li>
         {% endfor %}
@@ -146,17 +149,39 @@
     </section>
 
     <section class="card">
-      <h2>Your tweets</h2>
-      {% if tweets %}
+      <h2>Your timeline</h2>
+      <p class="muted">Latest 20 tweets from people you follow and your own tweets.</p>
+      {% if timeline_tweets %}
       <ul class="tweet-list">
-        {% for tweet in tweets %}
+        {% for tweet in timeline_tweets %}
         <li class="tweet-item">
+          <p class="muted">
+            <a class="inline-link" href="/profile/{{ tweet.get('username', 'unknown') }}">@{{ tweet.get("username", "unknown") }}</a>
+          </p>
           <p>{{ tweet.get("text") }}</p>
         </li>
         {% endfor %}
       </ul>
       {% else %}
-      <p class="muted">No tweets yet.</p>
+      <p class="muted">No timeline tweets yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Following</h2>
+      {% if following_users %}
+      <ul class="tweet-list">
+        {% for followed_user in following_users %}
+        <li class="tweet-item follow-item">
+          <p><a class="inline-link" href="/profile/{{ followed_user.get('username') }}">@{{ followed_user.get("username") }}</a></p>
+          <form method="post" action="/unfollow/{{ followed_user.get('username') }}">
+            <button type="submit">Unfollow</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">You are not following anyone yet.</p>
       {% endif %}
     </section>
     {% endif %}
