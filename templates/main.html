@@ -40,6 +40,70 @@
     </section>
 
     {% if current_user %}
+    <section class="card">
+      <h2>Search</h2>
+      <p class="muted">Both searches match from the beginning only.</p>
+      <form method="get" action="/" class="search-form">
+        <div class="search-fields">
+          <div>
+            <label for="username_query">Username starts with</label>
+            <input
+              id="username_query"
+              name="username_query"
+              type="text"
+              placeholder="e.g. hab"
+              value="{{ username_query }}"
+            />
+          </div>
+          <div>
+            <label for="tweet_query">Tweet starts with</label>
+            <input
+              id="tweet_query"
+              name="tweet_query"
+              type="text"
+              placeholder="e.g. hello"
+              value="{{ tweet_query }}"
+            />
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">Run search</button>
+          <a class="btn-link" href="/">Clear</a>
+        </div>
+      </form>
+
+      {% if username_query %}
+      <h3 class="subheading">Username results</h3>
+      {% if matched_users %}
+      <ul class="tweet-list">
+        {% for user in matched_users %}
+        <li class="tweet-item">
+          <p>@{{ user.get("username") }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No usernames found for "{{ username_query }}".</p>
+      {% endif %}
+      {% endif %}
+
+      {% if tweet_query %}
+      <h3 class="subheading">Tweet results</h3>
+      {% if matched_tweets %}
+      <ul class="tweet-list">
+        {% for matched_tweet in matched_tweets %}
+        <li class="tweet-item">
+          <p class="muted">@{{ matched_tweet.get("username", "unknown") }}</p>
+          <p>{{ matched_tweet.get("text") }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No tweets found for "{{ tweet_query }}".</p>
+      {% endif %}
+      {% endif %}
+    </section>
+
     {% if needs_username %}
     <section class="card">
       <h2>Set your username</h2>
@@ -60,22 +124,25 @@
     </section>
     {% else %}
     <section class="card">
-      <h2>Add a tweet</h2>
+      <h2>Quick actions</h2>
       <p class="muted">Posting as @{{ current_user.get("username") }}</p>
-      <form method="post" action="/add-tweet">
-        <label for="tweet_text">Tweet</label>
-        <textarea
-          id="tweet_text"
-          name="tweet_text"
-          maxlength="280"
-          rows="4"
-          placeholder="What's happening?"
-          required
-        ></textarea>
-        <div class="actions">
-          <button type="submit">Post tweet</button>
-        </div>
-      </form>
+      <button id="toggle-compose" type="button">Add new tweet</button>
+      <div id="compose-panel" class="compose-panel" hidden>
+        <form method="post" action="/add-tweet">
+          <label for="tweet_text">Tweet</label>
+          <textarea
+            id="tweet_text"
+            name="tweet_text"
+            maxlength="280"
+            rows="4"
+            placeholder="What's happening?"
+            required
+          ></textarea>
+          <div class="actions">
+            <button type="submit">Post tweet</button>
+          </div>
+        </form>
+      </div>
     </section>
 
     <section class="card">
@@ -97,5 +164,16 @@
   </main>
 
   <script type="module" src="/static/firebase-login.js"></script>
+  <script>
+    const toggleComposeButton = document.getElementById("toggle-compose");
+    const composePanel = document.getElementById("compose-panel");
+    if (toggleComposeButton && composePanel) {
+      toggleComposeButton.addEventListener("click", () => {
+        const shouldShow = composePanel.hidden;
+        composePanel.hidden = !shouldShow;
+        toggleComposeButton.textContent = shouldShow ? "Hide tweet form" : "Add new tweet";
+      });
+    }
+  </script>
 </body>
 </html>

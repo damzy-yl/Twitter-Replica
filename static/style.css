@@ -17,7 +17,8 @@ body {
 }
 
 h1,
-h2 {
+h2,
+h3 {
   margin: 0;
   color: #f8fafc;
 }
@@ -31,6 +32,10 @@ h1 {
 h2 {
   font-size: 1.1rem;
   margin-bottom: 0.6rem;
+}
+
+h3 {
+  font-size: 1rem;
 }
 
 .card {
@@ -142,4 +147,51 @@ textarea {
   border-radius: 10px;
   padding: 0.75rem;
   margin-top: 0.5rem;
+}
+
+.search-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.search-form {
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.46);
+  border-radius: 10px;
+}
+
+.subheading {
+  margin-top: 1rem;
+  color: #cbd5e1;
+}
+
+.search-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.8rem;
+}
+
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.62rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #cbd5e1;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.btn-link:hover {
+  border-color: rgba(148, 163, 184, 0.6);
+  background: rgba(30, 41, 59, 0.5);
+}
+
+.compose-panel {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
 }

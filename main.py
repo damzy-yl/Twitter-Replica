@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
@@ -91,6 +92,34 @@ def get_tweets_for_user(user_id) -> list[dict]:
     )
 
 
+def search_users_by_username_prefix(username_query: str) -> list[dict]:
+    if users_collection is None or not username_query:
+        return []
+
+    query_pattern = f"^{re.escape(username_query)}"
+    return list(
+        users_collection.find(
+            {"username": {"$regex": query_pattern, "$options": "i"}}
+        )
+        .sort("username", 1)
+        .limit(20)
+    )
+
+
+def search_tweets_by_text_prefix(tweet_query: str) -> list[dict]:
+    if tweets_collection is None or not tweet_query:
+        return []
+
+    query_pattern = f"^{re.escape(tweet_query)}"
+    return list(
+        tweets_collection.find(
+            {"text": {"$regex": query_pattern, "$options": "i"}}
+        )
+        .sort("created_at", -1)
+        .limit(20)
+    )
+
+
 def render_home(
     request: Request,
     error_message: Optional[str] = None,
@@ -99,6 +128,10 @@ def render_home(
     user_token, token_error = get_user_token_from_cookie(request)
     current_user = None
     user_tweets = []
+    username_query = request.query_params.get("username_query", "").strip()
+    tweet_query = request.query_params.get("tweet_query", "").strip()
+    matched_users = []
+    matched_tweets = []
 
     if mongo_client is None or database is None:
         error_message = "MongoDB is not configured."
@@ -108,6 +141,8 @@ def render_home(
         current_user = get_or_create_current_user(user_token)
         if current_user:
             user_tweets = get_tweets_for_user(current_user["_id"])
+            matched_users = search_users_by_username_prefix(username_query)
+            matched_tweets = search_tweets_by_text_prefix(tweet_query)
 
     if not error_message and token_error:
         error_message = token_error
@@ -123,6 +158,10 @@ def render_home(
             "current_user": current_user,
             "needs_username": bool(current_user) and not current_user.get("username"),
             "tweets": user_tweets,
+            "username_query": username_query,
+            "tweet_query": tweet_query,
+            "matched_users": matched_users,
+            "matched_tweets": matched_tweets,
         },
     )
 
