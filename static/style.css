@@ -250,3 +250,11 @@ textarea {
   color: #93c5fd;
   font-weight: 600;
 }
+
+.tweet-image {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}

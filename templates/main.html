@@ -131,7 +131,7 @@
       <p class="muted">Posting as @{{ current_user.get("username") }}</p>
       <button id="toggle-compose" type="button">Add new tweet</button>
       <div id="compose-panel" class="compose-panel" hidden>
-        <form method="post" action="/add-tweet">
+        <form method="post" action="/add-tweet" enctype="multipart/form-data">
           <label for="tweet_text">Tweet</label>
           <textarea
             id="tweet_text"
@@ -141,6 +141,8 @@
             placeholder="What's happening?"
             required
           ></textarea>
+          <label for="tweet_image">Optional image (JPG/PNG)</label>
+          <input id="tweet_image" name="tweet_image" type="file" accept=".jpg,.jpeg,.png,image/png,image/jpeg" />
           <div class="actions">
             <button type="submit">Post tweet</button>
           </div>
@@ -159,6 +161,13 @@
             <a class="inline-link" href="/profile/{{ tweet.get('username', 'unknown') }}">@{{ tweet.get("username", "unknown") }}</a>
           </p>
           <p>{{ tweet.get("text") }}</p>
+          {% if tweet.get("tweet_image_url") %}
+          <img
+            class="tweet-image"
+            src="{{ tweet.get('tweet_image_url') }}?v={{ tweet.get('tweet_image_updated_at', '') }}"
+            alt="Image attached to tweet"
+          />
+          {% endif %}
           {% if current_user and tweet.get("user_id") == current_user.get("_id") %}
           <details class="tweet-edit">
             <summary>Edit tweet</summary>
@@ -174,6 +183,11 @@
               </div>
             </form>
           </details>
+          <form method="post" action="/tweet/{{ tweet.get('_id') }}/delete">
+            <div class="actions">
+              <button type="submit">Delete tweet</button>
+            </div>
+          </form>
           {% endif %}
         </li>
         {% endfor %}

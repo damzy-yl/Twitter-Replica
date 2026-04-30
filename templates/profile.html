@@ -69,6 +69,13 @@
         {% for tweet in profile_tweets %}
         <li class="tweet-item">
           <p>{{ tweet.get("text") }}</p>
+          {% if tweet.get("tweet_image_url") %}
+          <img
+            class="tweet-image"
+            src="{{ tweet.get('tweet_image_url') }}?v={{ tweet.get('tweet_image_updated_at', '') }}"
+            alt="Image attached to tweet"
+          />
+          {% endif %}
           {% if can_edit_profile %}
           <details class="tweet-edit">
             <summary>Edit tweet</summary>
@@ -84,6 +91,11 @@
               </div>
             </form>
           </details>
+          <form method="post" action="/tweet/{{ tweet.get('_id') }}/delete">
+            <div class="actions">
+              <button type="submit">Delete tweet</button>
+            </div>
+          </form>
           {% endif %}
         </li>
         {% endfor %}

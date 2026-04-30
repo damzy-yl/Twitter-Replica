@@ -225,6 +225,11 @@ def build_profile_image_blob_name(user_id: ObjectId, original_filename: str) -> 
     return f"profile/{user_id}-{safe_name}"
 
 
+def build_tweet_image_blob_name(user_id: ObjectId, tweet_id: ObjectId, original_filename: str) -> str:
+    safe_name = sanitize_filename(original_filename or "tweet-image")
+    return f"tweet/{user_id}-{tweet_id}-{safe_name}"
+
+
 def upload_profile_image_to_blob(
     user_id: ObjectId,
     file_name: str,
@@ -235,6 +240,29 @@ def upload_profile_image_to_blob(
         raise RuntimeError("Blob storage is not configured.")
 
     blob_name = build_profile_image_blob_name(user_id, file_name)
+    blob_client = blob_service_client.get_blob_client(
+        container=AZURE_STORAGE_CONTAINER_NAME,
+        blob=blob_name,
+    )
+    blob_client.upload_blob(
+        content,
+        overwrite=True,
+        content_settings=ContentSettings(content_type=content_type),
+    )
+    return blob_client.url, blob_name
+
+
+def upload_tweet_image_to_blob(
+    user_id: ObjectId,
+    tweet_id: ObjectId,
+    file_name: str,
+    content: bytes,
+    content_type: str,
+) -> tuple[str, str]:
+    if blob_service_client is None:
+        raise RuntimeError("Blob storage is not configured.")
+
+    blob_name = build_tweet_image_blob_name(user_id, tweet_id, file_name)
     blob_client = blob_service_client.get_blob_client(
         container=AZURE_STORAGE_CONTAINER_NAME,
         blob=blob_name,
@@ -261,6 +289,36 @@ def download_profile_image_blob(blob_name: str) -> tuple[bytes, str]:
     if properties.content_settings and properties.content_settings.content_type:
         media_type = properties.content_settings.content_type
     return downloader.readall(), media_type
+
+
+def download_tweet_image_blob(blob_name: str) -> tuple[bytes, str]:
+    if blob_service_client is None:
+        raise RuntimeError("Blob storage is not configured.")
+
+    blob_client = blob_service_client.get_blob_client(
+        container=AZURE_STORAGE_CONTAINER_NAME,
+        blob=blob_name,
+    )
+    downloader = blob_client.download_blob()
+    properties = blob_client.get_blob_properties()
+    media_type = "application/octet-stream"
+    if properties.content_settings and properties.content_settings.content_type:
+        media_type = properties.content_settings.content_type
+    return downloader.readall(), media_type
+
+
+def delete_blob_if_exists(blob_name: str) -> None:
+    if blob_service_client is None or not blob_name:
+        return
+
+    blob_client = blob_service_client.get_blob_client(
+        container=AZURE_STORAGE_CONTAINER_NAME,
+        blob=blob_name,
+    )
+    try:
+        blob_client.delete_blob()
+    except AzureError:
+        pass
 
 
 def render_home(
@@ -413,6 +471,32 @@ async def profile_picture(username: str):
     return Response(content=image_bytes, media_type=media_type)
 
 
+@app.get("/tweet/{tweet_id}/image")
+async def tweet_image(tweet_id: str):
+    if tweets_collection is None:
+        return Response(status_code=404)
+
+    try:
+        tweet_object_id = ObjectId(tweet_id)
+    except InvalidId:
+        return Response(status_code=404)
+
+    tweet_document = tweets_collection.find_one({"_id": tweet_object_id})
+    if not tweet_document:
+        return Response(status_code=404)
+
+    blob_name = tweet_document.get("tweet_image_blob_name")
+    if not blob_name:
+        return Response(status_code=404)
+
+    try:
+        image_bytes, media_type = download_tweet_image_blob(blob_name)
+    except (RuntimeError, AzureError):
+        return Response(status_code=404)
+
+    return Response(content=image_bytes, media_type=media_type)
+
+
 @app.post("/set-username", response_class=HTMLResponse)
 async def set_username(request: Request, username: str = Form(...)):
     user_token, token_error = get_user_token_from_cookie(request)
@@ -442,7 +526,11 @@ async def set_username(request: Request, username: str = Form(...)):
 
 
 @app.post("/add-tweet", response_class=HTMLResponse)
-async def add_tweet(request: Request, tweet_text: str = Form(...)):
+async def add_tweet(
+    request: Request,
+    tweet_text: str = Form(...),
+    tweet_image: UploadFile | None = File(None),
+):
     user_token, token_error = get_user_token_from_cookie(request)
     if token_error:
         return render_home(request, error_message=token_error)
@@ -463,14 +551,54 @@ async def add_tweet(request: Request, tweet_text: str = Form(...)):
     if len(clean_tweet) > 280:
         return render_home(request, error_message="Tweet must be 280 characters or fewer.")
 
-    tweets_collection.insert_one(
+    insert_result = tweets_collection.insert_one(
         {
             "user_id": current_user["_id"],
             "username": current_user["username"],
             "text": clean_tweet,
+            "tweet_image_url": None,
+            "tweet_image_blob_name": None,
             "created_at": datetime.now(timezone.utc),
         }
     )
+    inserted_tweet_id = insert_result.inserted_id
+
+    if tweet_image and tweet_image.filename:
+        lowered_name = tweet_image.filename.lower()
+        allowed_extensions = (".jpg", ".jpeg", ".png")
+        allowed_content_types = {"image/jpeg", "image/png"}
+        if not lowered_name.endswith(allowed_extensions) or tweet_image.content_type not in allowed_content_types:
+            tweets_collection.delete_one({"_id": inserted_tweet_id})
+            return render_home(request, error_message="Tweet image must be JPG or PNG.")
+
+        image_bytes = await tweet_image.read()
+        if not image_bytes:
+            tweets_collection.delete_one({"_id": inserted_tweet_id})
+            return render_home(request, error_message="Tweet image file is empty.")
+
+        try:
+            _, blob_name = upload_tweet_image_to_blob(
+                current_user["_id"],
+                inserted_tweet_id,
+                tweet_image.filename,
+                image_bytes,
+                tweet_image.content_type or "application/octet-stream",
+            )
+        except (RuntimeError, AzureError) as err:
+            tweets_collection.delete_one({"_id": inserted_tweet_id})
+            return render_home(request, error_message=f"Unable to upload tweet image: {err}")
+
+        tweets_collection.update_one(
+            {"_id": inserted_tweet_id},
+            {
+                "$set": {
+                    "tweet_image_url": f"/tweet/{inserted_tweet_id}/image",
+                    "tweet_image_blob_name": blob_name,
+                    "tweet_image_updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
     return render_home(request, success_message="Tweet posted.")
 
 
@@ -514,6 +642,36 @@ async def edit_tweet(request: Request, tweet_id: str, tweet_text: str = Form(...
         },
     )
     return render_home(request, success_message="Tweet updated.")
+
+
+@app.post("/tweet/{tweet_id}/delete", response_class=HTMLResponse)
+async def delete_tweet(request: Request, tweet_id: str):
+    user_token, token_error = get_user_token_from_cookie(request)
+    if token_error:
+        return render_home(request, error_message=token_error)
+
+    if users_collection is None or tweets_collection is None:
+        return render_home(request, error_message="MongoDB connection failed.")
+
+    current_user = get_or_create_current_user(user_token)
+    if not current_user:
+        return render_home(request, error_message="Unable to find current user.")
+
+    try:
+        tweet_object_id = ObjectId(tweet_id)
+    except InvalidId:
+        return render_home(request, error_message="Invalid tweet id.")
+
+    existing_tweet = tweets_collection.find_one({"_id": tweet_object_id})
+    if not existing_tweet:
+        return render_home(request, error_message="Tweet not found.")
+    if existing_tweet.get("user_id") != current_user["_id"]:
+        return render_home(request, error_message="You can only delete your own tweets.")
+
+    tweet_blob_name = existing_tweet.get("tweet_image_blob_name")
+    tweets_collection.delete_one({"_id": tweet_object_id})
+    delete_blob_if_exists(tweet_blob_name)
+    return render_home(request, success_message="Tweet deleted.")
 
 
 @app.post("/profile/{username}/toggle-follow", response_class=HTMLResponse)
