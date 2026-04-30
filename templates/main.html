@@ -157,6 +157,9 @@
       <ul class="tweet-list">
         {% for tweet in timeline_tweets %}
         <li class="tweet-item">
+          {% if tweet.get("is_retweet") %}
+          <p class="muted">Retweeted from @{{ tweet.get("retweet_original_username", "unknown") }}</p>
+          {% endif %}
           <p class="muted">
             <a class="inline-link" href="/profile/{{ tweet.get('username', 'unknown') }}">@{{ tweet.get("username", "unknown") }}</a>
           </p>
@@ -171,13 +174,20 @@
           {% if current_user and tweet.get("user_id") == current_user.get("_id") %}
           <details class="tweet-edit">
             <summary>Edit tweet</summary>
-            <form method="post" action="/tweet/{{ tweet.get('_id') }}/edit">
+            <form method="post" action="/tweet/{{ tweet.get('_id') }}/edit" enctype="multipart/form-data">
               <textarea
                 name="tweet_text"
                 maxlength="280"
                 rows="3"
                 required
               >{{ tweet.get("text") }}</textarea>
+              <label for="tweet_image_edit_{{ tweet.get('_id') }}">Replace image (JPG/PNG)</label>
+              <input
+                id="tweet_image_edit_{{ tweet.get('_id') }}"
+                name="tweet_image"
+                type="file"
+                accept=".jpg,.jpeg,.png,image/png,image/jpeg"
+              />
               <div class="actions">
                 <button type="submit">Save changes</button>
               </div>
@@ -186,6 +196,12 @@
           <form method="post" action="/tweet/{{ tweet.get('_id') }}/delete">
             <div class="actions">
               <button type="submit">Delete tweet</button>
+            </div>
+          </form>
+          {% else %}
+          <form method="post" action="/tweet/{{ tweet.get('_id') }}/retweet">
+            <div class="actions">
+              <button type="submit">Retweet</button>
             </div>
           </form>
           {% endif %}

@@ -275,6 +275,24 @@ def upload_tweet_image_to_blob(
     return blob_client.url, blob_name
 
 
+def copy_tweet_image_for_retweet(
+    source_blob_name: str,
+    target_user_id: ObjectId,
+    target_tweet_id: ObjectId,
+    original_filename: str,
+    content_type: str,
+) -> tuple[str, str]:
+    source_bytes, source_media_type = download_tweet_image_blob(source_blob_name)
+    target_content_type = content_type or source_media_type or "application/octet-stream"
+    return upload_tweet_image_to_blob(
+        target_user_id,
+        target_tweet_id,
+        original_filename,
+        source_bytes,
+        target_content_type,
+    )
+
+
 def download_profile_image_blob(blob_name: str) -> tuple[bytes, str]:
     if blob_service_client is None:
         raise RuntimeError("Blob storage is not configured.")
@@ -556,6 +574,7 @@ async def add_tweet(
             "user_id": current_user["_id"],
             "username": current_user["username"],
             "text": clean_tweet,
+            "is_retweet": False,
             "tweet_image_url": None,
             "tweet_image_blob_name": None,
             "created_at": datetime.now(timezone.utc),
@@ -603,7 +622,12 @@ async def add_tweet(
 
 
 @app.post("/tweet/{tweet_id}/edit", response_class=HTMLResponse)
-async def edit_tweet(request: Request, tweet_id: str, tweet_text: str = Form(...)):
+async def edit_tweet(
+    request: Request,
+    tweet_id: str,
+    tweet_text: str = Form(...),
+    tweet_image: UploadFile | None = File(None),
+):
     user_token, token_error = get_user_token_from_cookie(request)
     if token_error:
         return render_home(request, error_message=token_error)
@@ -632,16 +656,118 @@ async def edit_tweet(request: Request, tweet_id: str, tweet_text: str = Form(...
     if len(clean_tweet) > 280:
         return render_home(request, error_message="Tweet must be 280 characters or fewer.")
 
-    tweets_collection.update_one(
-        {"_id": tweet_object_id},
-        {
-            "$set": {
-                "text": clean_tweet,
-                "updated_at": datetime.now(timezone.utc),
-            }
-        },
-    )
+    update_fields = {
+        "text": clean_tweet,
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+    if tweet_image and tweet_image.filename:
+        lowered_name = tweet_image.filename.lower()
+        allowed_extensions = (".jpg", ".jpeg", ".png")
+        allowed_content_types = {"image/jpeg", "image/png"}
+        if not lowered_name.endswith(allowed_extensions) or tweet_image.content_type not in allowed_content_types:
+            return render_home(request, error_message="Tweet image must be JPG or PNG.")
+
+        image_bytes = await tweet_image.read()
+        if not image_bytes:
+            return render_home(request, error_message="Tweet image file is empty.")
+
+        old_blob_name = existing_tweet.get("tweet_image_blob_name")
+        try:
+            _, new_blob_name = upload_tweet_image_to_blob(
+                current_user["_id"],
+                tweet_object_id,
+                tweet_image.filename,
+                image_bytes,
+                tweet_image.content_type or "application/octet-stream",
+            )
+        except (RuntimeError, AzureError) as err:
+            return render_home(request, error_message=f"Unable to upload tweet image: {err}")
+
+        update_fields["tweet_image_url"] = f"/tweet/{tweet_object_id}/image"
+        update_fields["tweet_image_blob_name"] = new_blob_name
+        update_fields["tweet_image_updated_at"] = datetime.now(timezone.utc)
+        delete_blob_if_exists(old_blob_name)
+
+    tweets_collection.update_one({"_id": tweet_object_id}, {"$set": update_fields})
     return render_home(request, success_message="Tweet updated.")
+
+
+@app.post("/tweet/{tweet_id}/retweet", response_class=HTMLResponse)
+async def retweet_tweet(request: Request, tweet_id: str):
+    user_token, token_error = get_user_token_from_cookie(request)
+    if token_error:
+        return render_home(request, error_message=token_error)
+
+    if users_collection is None or tweets_collection is None:
+        return render_home(request, error_message="MongoDB connection failed.")
+
+    current_user = get_or_create_current_user(user_token)
+    if not current_user:
+        return render_home(request, error_message="Unable to find current user.")
+    if not current_user.get("username"):
+        return render_home(request, error_message="Set a username before retweeting.")
+
+    try:
+        source_tweet_id = ObjectId(tweet_id)
+    except InvalidId:
+        return render_home(request, error_message="Invalid tweet id.")
+
+    source_tweet = tweets_collection.find_one({"_id": source_tweet_id})
+    if not source_tweet:
+        return render_home(request, error_message="Tweet not found.")
+
+    source_original_id = source_tweet.get("retweet_original_tweet_id") or source_tweet["_id"]
+    existing_retweet = tweets_collection.find_one(
+        {
+            "user_id": current_user["_id"],
+            "retweet_original_tweet_id": source_original_id,
+            "is_retweet": True,
+        }
+    )
+    if existing_retweet:
+        return render_home(request, error_message="You already retweeted this tweet.")
+
+    retweet_document = {
+        "user_id": current_user["_id"],
+        "username": current_user["username"],
+        "text": source_tweet.get("text", ""),
+        "is_retweet": True,
+        "retweet_original_tweet_id": source_original_id,
+        "retweet_original_username": source_tweet.get("username", "unknown"),
+        "tweet_image_url": None,
+        "tweet_image_blob_name": None,
+        "created_at": datetime.now(timezone.utc),
+    }
+    insert_result = tweets_collection.insert_one(retweet_document)
+    retweet_id = insert_result.inserted_id
+
+    source_blob_name = source_tweet.get("tweet_image_blob_name")
+    if source_blob_name:
+        try:
+            _, copied_blob_name = copy_tweet_image_for_retweet(
+                source_blob_name=source_blob_name,
+                target_user_id=current_user["_id"],
+                target_tweet_id=retweet_id,
+                original_filename="retweet-image.png",
+                content_type="image/png",
+            )
+        except (RuntimeError, AzureError) as err:
+            tweets_collection.delete_one({"_id": retweet_id})
+            return render_home(request, error_message=f"Unable to copy retweet image: {err}")
+
+        tweets_collection.update_one(
+            {"_id": retweet_id},
+            {
+                "$set": {
+                    "tweet_image_url": f"/tweet/{retweet_id}/image",
+                    "tweet_image_blob_name": copied_blob_name,
+                    "tweet_image_updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+    return render_home(request, success_message="Retweeted.")
 
 
 @app.post("/tweet/{tweet_id}/delete", response_class=HTMLResponse)
