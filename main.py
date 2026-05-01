@@ -188,6 +188,30 @@ def get_following_users(current_user: dict) -> list[dict]:
     )
 
 
+def enrich_tweets_with_author_data(tweets: list[dict]) -> list[dict]:
+    if users_collection is None or not tweets:
+        return tweets
+
+    usernames = {tweet.get("username") for tweet in tweets if tweet.get("username")}
+    if not usernames:
+        return tweets
+
+    user_documents = list(users_collection.find({"username": {"$in": list(usernames)}}))
+    profile_image_by_username: dict[str, Optional[str]] = {}
+    for user_document in user_documents:
+        username = user_document.get("username")
+        if username:
+            profile_image_by_username[username] = user_document.get("profile_image_url")
+
+    enriched_tweets = []
+    for tweet in tweets:
+        tweet_copy = dict(tweet)
+        tweet_username = tweet_copy.get("username")
+        tweet_copy["author_profile_image_url"] = profile_image_by_username.get(tweet_username)
+        enriched_tweets.append(tweet_copy)
+    return enriched_tweets
+
+
 def search_users_by_username_prefix(username_query: str) -> list[dict]:
     if users_collection is None or not username_query:
         return []
@@ -361,6 +385,7 @@ def render_home(
         current_user = get_or_create_current_user(user_token)
         if current_user:
             timeline_tweets = get_timeline_tweets_for_user(current_user, 20)
+            timeline_tweets = enrich_tweets_with_author_data(timeline_tweets)
             following_users = get_following_users(current_user)
             matched_users = search_users_by_username_prefix(username_query)
             matched_tweets = search_tweets_by_text_prefix(tweet_query)
@@ -411,6 +436,7 @@ def render_profile(
         profile_user = users_collection.find_one({"username": profile_username})
         if profile_user:
             profile_tweets = get_latest_tweets_for_user(profile_user["_id"], 10)
+            profile_tweets = enrich_tweets_with_author_data(profile_tweets)
             if current_user and current_user["_id"] == profile_user["_id"]:
                 can_edit_profile = True
             if current_user and current_user["_id"] != profile_user["_id"] and current_user.get("username"):

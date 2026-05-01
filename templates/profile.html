@@ -8,7 +8,9 @@
 </head>
 <body>
   <main class="container">
-    <a class="btn-link back-link" href="/">Back to home</a>
+    <header class="page-header">
+      <a class="btn-link back-link" href="/">Back to home</a>
+    </header>
 
     {% if error_message %}
     <p class="status error">{{ error_message }}</p>
@@ -68,9 +70,28 @@
       <ul class="tweet-list">
         {% for tweet in profile_tweets %}
         <li class="tweet-item">
-          {% if tweet.get("is_retweet") %}
-          <p class="muted">Retweeted from @{{ tweet.get("retweet_original_username", "unknown") }}</p>
-          {% endif %}
+          <div class="tweet-head">
+            {% if tweet.get("author_profile_image_url") %}
+            <img
+              class="tweet-avatar"
+              src="{{ tweet.get('author_profile_image_url') }}"
+              alt="Profile picture for {{ tweet.get('username', 'unknown') }}"
+            />
+            {% else %}
+            <div class="tweet-avatar tweet-avatar-fallback">?</div>
+            {% endif %}
+            <div>
+              <p class="muted tweet-author-row">
+                <a class="inline-link" href="/profile/{{ tweet.get('username', 'unknown') }}">@{{ tweet.get("username", "unknown") }}</a>
+              </p>
+              {% if tweet.get("is_retweet") %}
+              <p class="muted tweet-retweet-row">
+                Retweeted by @{{ tweet.get("username", "unknown") }} from
+                <a class="inline-link" href="/profile/{{ tweet.get('retweet_original_username', 'unknown') }}">@{{ tweet.get("retweet_original_username", "unknown") }}</a>
+              </p>
+              {% endif %}
+            </div>
+          </div>
           <p>{{ tweet.get("text") }}</p>
           {% if tweet.get("tweet_image_url") %}
           <img
